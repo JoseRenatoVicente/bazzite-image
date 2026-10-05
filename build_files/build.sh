@@ -77,11 +77,91 @@ REMOVE_PATTERNS=(
     lrzsz
     # Wallpapers
     plasma-workspace-wallpapers
+    # fcitx5 language engines (fcitx5 core, qt/gtk and configtool stay)
+    fcitx5-chewing
+    fcitx5-chinese-addons
+    fcitx5-chinese-addons-data
+    fcitx5-hangul
+    fcitx5-m17n
+    fcitx5-mozc
+    fcitx5-sayura
+    fcitx5-table-extra
+    fcitx5-unikey
+    libchewing
+    libhangul
+    libime
+    libime-data
+    m17n-db
+    m17n-db-devel
+    m17n-lib
+    # Non-x86 emulation and firmware (x86 KVM, virt-manager and OVMF stay,
+    # see KEEP_PACKAGES). qemu is an empty meta that requires every qemu-system-*
+    qemu
+    'qemu-system-*'
+    'qemu-user*'
+    'edk2-*'
+    # Docker (podman stays)
+    docker-ce
+    docker-ce-cli
+    containerd.io
+    docker-buildx-plugin
+    docker-compose-plugin
+    # Extra tools
+    cosign
+    tailscale
+    podman-tui
+    guestfs-tools
+    makemkv
+    # Intel OpenCL compute runtime (video, games and Vulkan are not affected)
+    intel-opencl
+    intel-opencl-clang
+    intel-igc
+    intel-igc-libs
+    llvm15-libs
+    clang15-libs
+    lld15-libs
+    'spirv-llvm15*'
+    # Kernel headers (gcc stays: perl -> perl-ExtUtils-CBuilder requires it)
+    kernel-devel
+    kernel-devel-matched
+    # Accessibility (flite stays: webkit and qt6-qtspeech link against it)
+    orca
+    brltty
+    speech-dispatcher
+    speech-dispatcher-espeak-ng
+    espeak-ng
+    # Oxygen theme
+    oxygen-icon-theme
+    plasma-oxygen
+    oxygen-cursor-themes
+    oxygen-sounds
+    # Printer drivers (hplip-libs/libgs stay: sane and ghostscript need them)
+    hplip
+    uld
+    gutenprint
+    gutenprint-cups
+    gutenprint-libs
+    # Firmware for hardware this machine does not have
+    atheros-firmware
+    mt7xxx-firmware
+    amd-gpu-firmware
+    # Misc
+    tesseract-devel
+    fish
+)
+
+# Matched by the patterns above but must stay
+KEEP_PACKAGES=(
+    qemu-system-x86
+    qemu-system-x86-core
+    edk2-ovmf
+    edk2-tools
 )
 
 to_remove=()
 for pattern in "${REMOVE_PATTERNS[@]}"; do
-    mapfile -t matches < <(rpm -qa --qf '%{NAME}\n' "$pattern" | sort -u)
+    mapfile -t matches < <(rpm -qa --qf '%{NAME}\n' "$pattern" | sort -u \
+        | grep -vxF "$(printf '%s\n' "${KEEP_PACKAGES[@]}")" || true)
     if [ "${#matches[@]}" -eq 0 ]; then
         echo "WARNING: no installed package matches '$pattern', skipping"
     else
@@ -127,6 +207,18 @@ dnf5 install -y tmux
 #### Example for enabling a System Unit File
 
 systemctl enable podman.socket
+
+### Trim files that are not worth their size (pt_BR/en only)
+
+# Translations other than en/pt. Not packaged separately, so rpm -V will report
+# them missing; that is expected.
+find /usr/share/locale -mindepth 1 -maxdepth 1 -type d \
+    ! -name 'en*' ! -name 'pt*' -exec rm -rf {} +
+# Emoji dictionaries for other languages (ibus itself must stay)
+find /usr/share/ibus/dicts -type f -name 'emoji-*.dict' \
+    ! -name 'emoji-en*' ! -name 'emoji-pt*' -delete
+# Package docs (man pages and licenses are kept)
+rm -rf /usr/share/doc
 
 ### Cleanup
 
