@@ -40,7 +40,6 @@ REMOVE_PATTERNS=(
     # Steam and the gaming-session stack (Terra gamescope build). Removing
     # Steam also unlocks dropping every i686 (32-bit) package below.
     steam
-    'steam-libs*'
     steam-devices
     steam-notif-daemon
     gamescope-session-steam
@@ -92,7 +91,12 @@ REMOVE_PATTERNS=(
     open-vm-tools-desktop
     spice-vdagent
     spice-webdavd
+    # hyperv-daemons meta plus (F44) its concrete subpackages
     hyperv-daemons
+    hyperv-daemons-license
+    hypervfcopyd
+    hypervkvpd
+    hypervvssd
     qemu-guest-agent
     virtualbox-guest-additions
     # Steam Deck hardware support, unused 3D/Qt leftovers, misc tools
@@ -139,7 +143,8 @@ REMOVE_PATTERNS=(
     javascriptcoregtk4.1
     lutris
     # Non-x86 emulation and firmware (x86 KVM, virt-manager and OVMF stay,
-    # see KEEP_PACKAGES). qemu is an empty meta that requires every qemu-system-*
+    # see KEEP_PACKAGES). "qemu" is an empty meta that requires every
+    # qemu-system-*
     qemu
     'qemu-system-*'
     'qemu-user*'
@@ -162,22 +167,22 @@ REMOVE_PATTERNS=(
     debugedit
     flatpak-builder
     stress-ng
-    # eBPF diagnostics and their LLVM 21 runtime. llvm-libs stays for Mesa.
+    # eBPF diagnostics (bcc-tools and python3-bcc are gone from the base;
+    # the bcc package still pulls in the bpf tooling) and their LLVM 21
+    # runtime. llvm-libs stays for Mesa.
     bcc
-    bcc-tools
-    python3-bcc
     bpftrace
     clang21-libs
     llvm21-libs
-    # Intel OpenCL compute runtime (video, games and Vulkan are not affected)
+    # Intel OpenCL compute runtime (video, games and Vulkan are not affected).
+    # The F44 rebuild of the Intel stack drags in the unversioned clang-libs
+    # and spirv-llvm-translator instead of the old LLVM 15 set.
     intel-opencl
     intel-opencl-clang
     intel-igc
     intel-igc-libs
-    llvm15-libs
-    clang15-libs
-    lld15-libs
-    'spirv-llvm15*'
+    clang-libs
+    spirv-llvm-translator
     # Legacy Intel Media SDK (VAAPI and intel-vpl-gpu-rt stay for Meteor Lake)
     intel-mediasdk
     # Kernel headers (gcc stays: perl -> perl-ExtUtils-CBuilder requires it)
@@ -222,8 +227,9 @@ REMOVE_PATTERNS=(
     vim-common
     # glibc all-langpacks: en/pt langpacks are installed before removal (below)
     glibc-all-langpacks
-    # OCR language data for languages we don't read (eng/por kept, see KEEP)
-    tesseract
+    # OCR language data for languages we don't read (eng/por kept, see KEEP).
+    # The "tesseract" meta package is gone; tesseract-libs stays because
+    # spectacle (OCR in screenshots) and libavfilter link against it.
     'tesseract-langpack-*'
     # OpenConnect VPN backend (the Plasma plugin above is removed with it)
     openconnect
@@ -280,6 +286,14 @@ dnf5 install -y glibc-langpack-en glibc-langpack-pt
 
 to_remove=()
 for pattern in "${REMOVE_PATTERNS[@]}"; do
+    if ! rpm -qa --qf '%{NAME}\n' "$pattern" 2>/dev/null | grep -c . > /dev/null; then
+        # grep -c (not -q!) so grep drains the whole rpm output stream: the
+        # early exit of "grep -q" SIGPIPEs rpm and, under "pipefail", makes
+        # every pattern with several matches warn spuriously even when the
+        # NEVRA loop below matches just fine.
+        echo "WARNING: no installed package matches '$pattern', skipping"
+        continue
+    fi
     # Emit full NEVRA: multilib packages exist in two arches under the same
     # NAME, and rpm -e (used for the fail-closed test below) refuses ambiguous
     # name-only specs.
@@ -294,9 +308,6 @@ for pattern in "${REMOVE_PATTERNS[@]}"; do
         fi
         to_remove+=("$nevra")
     done < <(rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' "$pattern" 2>/dev/null | sort -u)
-    if ! rpm -qa --qf '%{NAME}\n' "$pattern" 2>/dev/null | grep -q .; then
-        echo "WARNING: no installed package matches '$pattern', skipping"
-    fi
 done
 
 # Multilib i686: with Steam gone nothing hard-requires 32-bit packages,
@@ -413,6 +424,9 @@ rm -f /usr/share/applications/bazzite-documentation.desktop
 
 # dnf leaves per-repo state (countme) in /var, which bootc lint flags
 rm -rf /var/lib/dnf/repos
+# Same for the runtime-only state the dnf and selinux-policy transactions
+# left behind in /run during this build
+rm -rf /run/dnf /run/selinux-policy
 
 # Big dnf transactions leave a huge sqlite WAL (~100+ MB) in the rpmdb.
 # Flush it, then switch to DELETE journaling so RPM queries work on a read-only
