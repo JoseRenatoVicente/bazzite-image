@@ -1,0 +1,4 @@
+# Prefer i915 for Meteor Lake 7d45: the reference configuration experienced
+# VCS media-engine timeouts with xe during hardware video decoding.
+match-architectures = ["x86_64"]
+kargs = ["i915.force_probe=7d45", "xe.force_probe=!7d45"]

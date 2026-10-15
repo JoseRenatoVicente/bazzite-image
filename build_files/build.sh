@@ -174,15 +174,8 @@ REMOVE_PATTERNS=(
     bpftrace
     clang21-libs
     llvm21-libs
-    # Intel OpenCL compute runtime (video, games and Vulkan are not affected).
-    # The F44 rebuild of the Intel stack drags in the unversioned clang-libs
-    # and spirv-llvm-translator instead of the old LLVM 15 set.
-    intel-opencl
-    intel-opencl-clang
-    intel-igc
-    intel-igc-libs
-    clang-libs
-    spirv-llvm-translator
+    # Keep the Intel OpenCL runtime and its compiler dependencies: the Core
+    # Ultra GPU compute stack is enforced by intel-ultra.sh below.
     # Legacy Intel Media SDK (VAAPI and intel-vpl-gpu-rt stay for Meteor Lake)
     intel-mediasdk
     # Kernel headers (gcc stays: perl -> perl-ExtUtils-CBuilder requires it)
@@ -352,6 +345,10 @@ dnf5 install -y --setopt=install_weak_deps=False tmux rclone restic
 
 # Enforce the explicitly retained tools even if a future base drops them.
 rpm -q --quiet rclone restic
+
+### Intel Core Ultra / Meteor Lake hardware support
+
+bash /ctx/intel-ultra.sh
 
 # Use a COPR Example:
 #

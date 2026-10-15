@@ -2,6 +2,91 @@
 
 This repository is meant to be a template for building your own custom [bootc](https://github.com/bootc-dev/bootc) image. This template is the recommended way to make customizations to any image published by the Universal Blue Project.
 
+## Hardware desta imagem: Intel Core Ultra 7 / Meteor Lake
+
+Perfil adaptado da configuração NixOS de um Latitude 7450 para o host real:
+**Dell Latitude 5450, Core Ultra 7 165U, GPU Intel `8086:7d45` e NPU `8086:7d1d`**.
+As mudanças são aplicadas na imagem; o build não reconfigura o host.
+
+- `build_files/intel-ultra.sh` garante microcódigo, firmwares Intel/SOF, VA-API
+  (`libva-intel-media-driver`/iHD), oneVPL, OpenCL/Level Zero para a GPU
+  (`intel-compute-runtime`) e o runtime Level Zero da NPU (`intel-npu-driver`).
+  OpenCL e suas dependências deixam de ser removidos pelo enxugamento da imagem.
+- `system_files/usr/lib/bootc/kargs.d/20-intel-meteor-lake.toml` seleciona `i915`
+  e impede que `xe` assuma **somente** a GPU `7d45`, seguindo o contorno dos
+  timeouts de decodificação de vídeo relatados na referência.
+- O initramfs é regenerado com o kernel **da imagem**, incluindo os módulos de
+  armazenamento, criptografia, Thunderbolt e gráficos da referência, preservando
+  o suporte de boot OSTree. Mantemos o kernel Bazzite e seus módulos assinados,
+  em vez de trocar a distribuição do kernel.
+- O driver `intel_vpu` da NPU e `squashfs` são carregados no boot. As permissões
+  de `/dev/accel` continuam sendo geridas pelas regras udev da base Bazzite.
+- A webcam detectada no host é **USB/UVC**, não MIPI/IPU6. Não instalamos o stack
+  `ipu6epmtl` nem renomeamos a câmera virtual como se fosse uma câmera MIPI.
+  Bazzite já fornece `v4l2loopback` com `exclusive_caps=1`, além de suporte a
+  Bluetooth, impressão digital, SMART, ZSA e zram; esses componentes são preservados.
+
+### Hibernação: configuração local necessária
+
+A imagem fornece `HibernateMode=shutdown`, `HibernateDelaySec=30min` e suporte de
+resume no initramfs, mas **não muda automaticamente a ação da tampa**. No host
+inspecionado, o destino de resume ainda não estava configurado. Primeiro configure
+swap persistente e retomada seguindo o [guia de swap do Bazzite](https://docs.bazzite.gg/Advanced/swapfile/),
+verifique as restrições de Secure Boot/lockdown e teste a hibernação manualmente.
+Zram sozinho não armazena uma imagem de hibernação.
+
+Não copie `mainLuks`, `/dev/nvme0n1p2`, `resume_offset=533760` ou UUIDs da referência.
+Para swapfile Btrfs, o offset deve ser calculado **nesta instalação** com
+`btrfs inspect-internal map-swapfile -r CAMINHO_DO_SWAPFILE` e recalculado se o
+arquivo for recriado ou movido. Nenhum disco/swap é criado ou alterado pelo build.
+
+Após validar a retomada, a política de tampa da referência pode ser instalada:
+
+```bash
+sudo install -Dm644 /usr/share/bazzite-image/hibernate/logind.conf \
+  /etc/systemd/logind.conf.d/60-suspend-then-hibernate.conf
+```
+
+Reinicie para aplicar e confira também a ação da tampa no KDE PowerDevil, que pode
+assumir esse controle no lugar do logind.
+
+O contorno LPSS do touchpad fica **desativado por padrão**. Somente se o touchpad
+deixar de funcionar após S4 neste equipamento, habilite-o localmente:
+
+```bash
+sudo install -d /etc/bazzite-image
+sudo touch /etc/bazzite-image/latitude-lpss-s4-workaround
+```
+
+O hook confere modelo Dell, controlador Intel `8086:7e7b` em `0000:00:15.3` e o
+driver `intel-lpss`. Ele desassocia antes de S4 e reassocia ao retornar, sem mexer
+na suspensão comum nem na primeira etapa de `suspend-then-hibernate`. Para
+desabilitá-lo, remova `/etc/bazzite-image/latitude-lpss-s4-workaround`.
+
+### Validação após iniciar a nova imagem
+
+```bash
+lspci -nnk -d 8086:7d45  # deve mostrar i915
+lspci -nnk -d 8086:7d1d  # deve mostrar intel_vpu
+vainfo                 # VA-API/iHD
+clinfo -l              # dispositivo OpenCL Intel
+ls -l /dev/accel/      # dispositivo da NPU; inferência depende da aplicação
+```
+
+Os argumentos em `kargs.d` são geridos pelo **bootc**. Se a imagem for aplicada
+por `rpm-ostree rebase`, confira `/proc/cmdline`: esse caminho pode exigir aplicar
+os argumentos manualmente. Ajustes locais antigos de `i915.force_probe` ou
+`xe.force_probe` também devem ser revisados para evitar opções conflitantes.
+
+Serviços pessoais (WireGuard, backups, compartilhamentos, WWAN/FoxFlss), segredos,
+layout Btrfs/LUKS e identificadores da instalação NixOS não são importados.
+
+Os testes de configuração e do hook usam um sysfs simulado, sem tocar no hardware:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
 # Community
 
 If you have questions about this template after following the instructions, try the following spaces:
